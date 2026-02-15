@@ -61,12 +61,24 @@ python text_cleaner.py
 
 ## How It Works
 
-The application uses smart heuristics to determine when lines should be joined:
+The application uses **intelligent margin detection** combined with contextual heuristics:
 
-- **Joins lines** that end mid-sentence (no punctuation)
-- **Preserves breaks** after periods, question marks, exclamation points, colons
+### Two-Phase Algorithm:
+
+**Phase 1: Pattern Detection**
+- Analyzes line lengths across the entire text
+- Detects if there's a consistent "margin" (e.g., ~80 characters) where lines break
+- Uses statistical analysis (75th-90th percentile) to identify the pattern
+- Falls back to simpler heuristics when no pattern is detected
+
+**Phase 2: Smart Line Joining**
+- Lines near the detected margin + no strong punctuation → likely broken, join them
+- Lines significantly shorter than margin → use context (punctuation, bullets, etc.)
+- **Preserves breaks** after periods, question marks, exclamation points
 - **Preserves breaks** before numbered lists and bullet points
 - **Preserves blank lines** (paragraph separators)
+
+This approach is especially effective for text copied from PDFs, terminals, or fixed-width formatted documents.
 
 ## Example
 

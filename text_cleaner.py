@@ -54,42 +54,125 @@ class TextCleanerApp:
         )
         self.preview_text.pack(padx=10, pady=5, fill=tk.BOTH, expand=True)
 
+    def detect_margin_pattern(self, lines):
+        """
+        Detect if there's a consistent right margin (character count) pattern
+        that suggests text was broken at a fixed width.
+
+        Returns: (has_pattern, margin_length, tolerance) or (False, None, None)
+        """
+        # Collect lengths of non-empty, substantial lines
+        line_lengths = []
+        for line in lines:
+            stripped = line.rstrip()
+            # Ignore empty lines and very short lines (likely intentional)
+            if len(stripped) >= 30:
+                line_lengths.append(len(stripped))
+
+        # Need sufficient data for statistical analysis
+        if len(line_lengths) < 5:
+            return False, None, None
+
+        # Sort to find percentiles
+        sorted_lengths = sorted(line_lengths)
+        n = len(sorted_lengths)
+
+        # Get the 75th-90th percentile range (where the margin likely is)
+        p75_idx = int(n * 0.75)
+        p90_idx = int(n * 0.90)
+
+        margin_candidates = sorted_lengths[p75_idx:p90_idx + 1]
+        if not margin_candidates:
+            return False, None, None
+
+        # Calculate median of margin candidates
+        median_margin = margin_candidates[len(margin_candidates) // 2]
+
+        # Count how many lines cluster near this margin
+        tolerance = 10  # chars
+        near_margin_count = sum(1 for length in line_lengths
+                               if abs(length - median_margin) <= tolerance)
+
+        # If 40%+ of lines are near the detected margin, we have a pattern
+        if near_margin_count / len(line_lengths) >= 0.40:
+            return True, median_margin, tolerance
+
+        return False, None, None
+
+    def should_join_lines(self, current_line, next_line, has_margin, margin_length, tolerance):
+        """
+        Determine if current_line should be joined with next_line.
+        Uses margin pattern detection when available, plus context heuristics.
+        """
+        # Always preserve paragraph breaks
+        if not next_line.strip():
+            return False
+
+        # Don't join if next line starts with bullet/number
+        if re.match(r'^\s*[\d\-\*•]', next_line):
+            return False
+
+        current_stripped = current_line.rstrip()
+        current_length = len(current_stripped)
+
+        # Margin-based heuristic (primary)
+        if has_margin:
+            near_margin = abs(current_length - margin_length) <= tolerance
+
+            if near_margin:
+                # Line is near the margin length - likely a forced break
+                # Still check for strong sentence endings as a safety check
+                if current_stripped.endswith(('.', '!', '?')):
+                    # Strong sentence ending - don't join
+                    return False
+                # Weak punctuation or no punctuation - likely broken, join it
+                return True
+            else:
+                # Line is shorter than margin - use context heuristics
+                # This line probably ended naturally or intentionally
+                if current_stripped.endswith(('.', '!', '?', ':', '-')):
+                    return False
+                # No ending punctuation and short - could still be broken mid-sentence
+                return True
+
+        # Fallback heuristic (when no margin pattern detected)
+        # Join if: line doesn't end with sentence-ending punctuation
+        if current_stripped.endswith(('.', '!', '?', ':', '-')):
+            return False
+
+        return True
+
     def clean_text(self, text):
         """Clean up text by joining broken lines appropriately."""
         lines = text.split('\n')
+
+        # Phase 1: Detect margin pattern
+        has_margin, margin_length, tolerance = self.detect_margin_pattern(lines)
+
+        # Phase 2: Clean with pattern-aware logic
         cleaned_lines = []
         i = 0
 
         while i < len(lines):
             current_line = lines[i].rstrip()
 
-            # Skip empty lines - preserve them
+            # Preserve empty lines
             if not current_line:
                 cleaned_lines.append('')
                 i += 1
                 continue
 
-            # Check if this line should be joined with the next
-            # Join if: line doesn't end with sentence-ending punctuation,
-            # and next line exists and doesn't start with special characters
+            # Try to join with subsequent lines
             while i + 1 < len(lines):
                 next_line = lines[i + 1].lstrip()
 
-                # Don't join if next line is empty (paragraph break)
-                if not next_line:
+                if self.should_join_lines(current_line, next_line, has_margin, margin_length, tolerance):
+                    # Join the lines
+                    current_line = current_line + ' ' + next_line
+                    i += 1
+                else:
+                    # Don't join - stop trying
                     break
-
-                # Don't join if current line ends with sentence punctuation
-                if current_line.endswith(('.', '!', '?', ':', '-')):
-                    break
-
-                # Don't join if next line starts with bullet/number
-                if re.match(r'^\s*[\d\-\*•]', lines[i + 1]):
-                    break
-
-                # Join the lines
-                current_line = current_line + ' ' + next_line
-                i += 1
 
             cleaned_lines.append(current_line)
             i += 1
