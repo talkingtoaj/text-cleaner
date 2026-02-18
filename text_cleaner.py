@@ -57,21 +57,37 @@ class TextCleanerApp:
     def strip_common_gutter(self, lines):
         """
         Detect and strip a consistent left gutter (common leading whitespace)
-        from all non-empty lines. Returns the de-guttered lines.
+        from all non-empty lines. Uses a percentile approach so a few outlier
+        lines at zero indent (e.g. a status line with no indent) don't defeat
+        detection. Returns the de-guttered lines.
         """
         non_empty_lines = [line for line in lines if line.strip()]
         if not non_empty_lines:
             return lines
 
-        # Find the minimum leading whitespace shared by all non-empty lines
         def leading_spaces(line):
             return len(line) - len(line.lstrip())
 
-        min_indent = min(leading_spaces(line) for line in non_empty_lines)
-        if min_indent == 0:
+        indents = [leading_spaces(line) for line in non_empty_lines]
+
+        # Use the 20th-percentile indent so outlier lines at 0 don't kill detection
+        sorted_indents = sorted(indents)
+        p20_idx = max(0, int(len(sorted_indents) * 0.20))
+        gutter = sorted_indents[p20_idx]
+
+        if gutter == 0:
             return lines
 
-        return [line[min_indent:] if line.strip() else line for line in lines]
+        # Confirm at least 70% of non-empty lines actually have this indent
+        lines_with_gutter = sum(1 for i in indents if i >= gutter)
+        if lines_with_gutter / len(indents) < 0.70:
+            return lines
+
+        # Strip gutter only from lines that have enough leading space
+        return [
+            line[gutter:] if (line.strip() and leading_spaces(line) >= gutter) else line
+            for line in lines
+        ]
 
     def detect_margin_pattern(self, lines):
         """
