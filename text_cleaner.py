@@ -54,6 +54,25 @@ class TextCleanerApp:
         )
         self.preview_text.pack(padx=10, pady=5, fill=tk.BOTH, expand=True)
 
+    def strip_common_gutter(self, lines):
+        """
+        Detect and strip a consistent left gutter (common leading whitespace)
+        from all non-empty lines. Returns the de-guttered lines.
+        """
+        non_empty_lines = [line for line in lines if line.strip()]
+        if not non_empty_lines:
+            return lines
+
+        # Find the minimum leading whitespace shared by all non-empty lines
+        def leading_spaces(line):
+            return len(line) - len(line.lstrip())
+
+        min_indent = min(leading_spaces(line) for line in non_empty_lines)
+        if min_indent == 0:
+            return lines
+
+        return [line[min_indent:] if line.strip() else line for line in lines]
+
     def detect_margin_pattern(self, lines):
         """
         Detect if there's a consistent right margin (character count) pattern
@@ -145,6 +164,9 @@ class TextCleanerApp:
     def clean_text(self, text):
         """Clean up text by joining broken lines appropriately."""
         lines = text.split('\n')
+
+        # Phase 0: Strip consistent left gutter
+        lines = self.strip_common_gutter(lines)
 
         # Phase 1: Detect margin pattern
         has_margin, margin_length, tolerance = self.detect_margin_pattern(lines)
